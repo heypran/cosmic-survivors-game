@@ -386,7 +386,7 @@ const CosmicSurvivors = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [gameState, manualShoot]);
+  }, [gameState, manualShoot, player.weapons.length]);
 
   // Update player position ref
   useEffect(() => {
