@@ -10,6 +10,9 @@ const DIAGONAL_FACTOR = 0.707;
 const MAX_ENEMIES = 50;
 const MAX_BULLETS = 100;
 const MAX_PARTICLES = 80;
+const MAX_TURRETS = 10;
+const TURRET_DURATION = 30000; // 30 seconds
+const TURRET_FIRE_RATE = 400; // ms between shots
 
 // Utility functions
 const distance = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -164,8 +167,8 @@ const getWeaponStats = (weapon, player) => {
 
   // Level-based improvements
   const levelMultiplier = 1 + (weaponLevel - 1) * 0.3; // 30% improvement per level
-  const bulletCountBonus =
-    weaponLevel > 2 ? Math.floor((weaponLevel - 1) / 2) : 0;
+  // More generous bullet count scaling: +1 bullet per level after level 1
+  const bulletCountBonus = Math.max(0, weaponLevel - 1);
 
   return {
     ...base,
@@ -279,6 +282,8 @@ const CosmicSurvivors = () => {
   const [healthPacks, setHealthPacks] = useState([]);
   const [shields, setShields] = useState([]);
   const [particles, setParticles] = useState([]);
+  const [turrets, setTurrets] = useState([]);
+  const [inactiveTurrets, setInactiveTurrets] = useState([]); // Turrets waiting to be activated
   const [wave, setWave] = useState(1);
   const [score, setScore] = useState(0);
   const [waveTimer, setWaveTimer] = useState(WAVE_DURATION);
@@ -735,6 +740,32 @@ const CosmicSurvivors = () => {
     setGameState('playing');
   }, []);
 
+  // Spawn turrets for wave (10+)
+  const spawnTurretsForWave = useCallback((waveNumber) => {
+    if (waveNumber < 10) return;
+
+    const turretCount = Math.min(MAX_TURRETS, Math.floor(waveNumber / 2));
+    const newTurrets = [];
+
+    for (let i = 0; i < turretCount; i++) {
+      // Spawn turrets in random locations, not too close to player start
+      const angle = (Math.PI * 2 * i) / turretCount + Math.random() * 0.5;
+      const distance = 200 + Math.random() * 250;
+
+      newTurrets.push({
+        id: Date.now() + Math.random() + i,
+        x: GAME_WIDTH / 2 + Math.cos(angle) * distance,
+        y: GAME_HEIGHT / 2 + Math.sin(angle) * distance,
+        size: 20,
+        color: '#ffd700',
+        glowColor: '#ffff00',
+        pulseFactor: Math.random() * 0.5 + 0.5,
+      });
+    }
+
+    setInactiveTurrets(newTurrets);
+  }, []);
+
   // Continue to next wave
   const continueToNextWave = useCallback(() => {
     setWave((prevWave) => {
@@ -742,11 +773,17 @@ const CosmicSurvivors = () => {
       setGrenadesSpawned(0);
       setHealthPacksSpawned(0);
       setShieldsSpawned(0);
+
+      // Spawn turrets for waves 10+
+      if (newWave >= 10) {
+        spawnTurretsForWave(newWave);
+      }
+
       return newWave;
     });
     setWaveTimer(WAVE_DURATION);
     setGameState('playing');
-  }, []);
+  }, [spawnTurretsForWave]);
 
   // Game loop
   const gameLoop = useCallback(() => {
@@ -897,6 +934,24 @@ const CosmicSurvivors = () => {
       }
     });
 
+    // Check player-turret collisions for activation
+    inactiveTurrets.forEach((turret) => {
+      if (distance(playerPosRef.current, turret) < turret.size + 16) {
+        // Activate the turret
+        const activatedTurret = {
+          ...turret,
+          isActive: true,
+          activatedAt: Date.now(),
+          lastShot: Date.now(),
+          angle: 0,
+        };
+
+        setTurrets((prev) => [...prev, activatedTurret]);
+        setInactiveTurrets((prev) => prev.filter((t) => t.id !== turret.id));
+        createParticles(turret.x, turret.y, '#ffd700', 12);
+      }
+    });
+
     // Bullet-enemy collisions
     setBullets((prevBullets) => {
       const remainingBullets = [];
@@ -997,6 +1052,55 @@ const CosmicSurvivors = () => {
         .filter((particle) => particle.life > 0)
     );
 
+    // Update active turrets
+    const turretNow = Date.now();
+    setTurrets((prevTurrets) => {
+      const activeTurrets = [];
+
+      prevTurrets.forEach((turret) => {
+        const timeActive = turretNow - turret.activatedAt;
+
+        // Remove turret after 30 seconds
+        if (timeActive >= TURRET_DURATION) {
+          createParticles(turret.x, turret.y, '#ff6600', 8);
+          return; // Don't keep this turret
+        }
+
+        // Turret firing logic
+        if (turretNow - turret.lastShot >= TURRET_FIRE_RATE) {
+          // Fire in 8 directions (360° circle)
+          const directions = 8;
+          for (let i = 0; i < directions; i++) {
+            const angle = (Math.PI * 2 * i) / directions + turret.angle;
+
+            setBullets((prevBullets) =>
+              [
+                ...prevBullets,
+                {
+                  id: Date.now() + Math.random() + i,
+                  x: turret.x,
+                  y: turret.y,
+                  vx: Math.cos(angle) * BULLET_SPEED * 0.8,
+                  vy: Math.sin(angle) * BULLET_SPEED * 0.8,
+                  damage: 25,
+                  color: '#ffd700',
+                  weapon: 'turret',
+                  size: 4,
+                },
+              ].slice(-MAX_BULLETS)
+            );
+          }
+
+          turret.lastShot = turretNow;
+          turret.angle += 0.1; // Slowly rotate the firing pattern
+        }
+
+        activeTurrets.push(turret);
+      });
+
+      return activeTurrets;
+    });
+
     // Update wave timer
     setWaveTimer((prev) => {
       const newTimer = prev - 16;
@@ -1023,6 +1127,7 @@ const CosmicSurvivors = () => {
     explodeGrenade,
     createParticles,
     levelUp,
+    inactiveTurrets,
   ]);
 
   // Start game loop
@@ -1125,10 +1230,173 @@ const CosmicSurvivors = () => {
             >
               START MISSION
             </button>
+            <button
+              onClick={() => setGameState('controls')}
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-teal-600 hover:from-blue-700 hover:to-teal-700 rounded-lg font-semibold text-lg transition-all duration-200 transform hover:scale-105"
+            >
+              GAME CONTROLS
+            </button>
             <div className="text-sm text-gray-400 space-y-1">
               <p>WASD to move • Click or SPACE to shoot</p>
               <p>Manual firing • Survive as long as possible</p>
             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'controls') {
+    return (
+      <div className="w-full h-screen bg-gradient-to-b from-purple-900 via-blue-900 to-black flex items-center justify-center text-white overflow-y-auto">
+        <div className="text-center space-y-6 max-w-4xl p-8">
+          <h1 className="text-4xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-600">
+            GAME CONTROLS & GUIDE
+          </h1>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
+            {/* Movement Controls */}
+            <div className="bg-gray-900 bg-opacity-70 rounded-lg p-6 border border-purple-500">
+              <h3 className="text-xl font-bold text-purple-400 mb-4">
+                Movement & Combat
+              </h3>
+              <div className="space-y-2 text-gray-300">
+                <p>
+                  <span className="text-yellow-400 font-semibold">WASD</span> -
+                  Move player
+                </p>
+                <p>
+                  <span className="text-yellow-400 font-semibold">
+                    Mouse Click
+                  </span>{' '}
+                  - Shoot at cursor
+                </p>
+                <p>
+                  <span className="text-yellow-400 font-semibold">SPACE</span> -
+                  Shoot forward
+                </p>
+                <p>
+                  <span className="text-yellow-400 font-semibold">P</span> -
+                  Pause/Resume game
+                </p>
+                <p>
+                  <span className="text-yellow-400 font-semibold">1-9</span> -
+                  Switch weapons
+                </p>
+                <p>
+                  <span className="text-yellow-400 font-semibold">TAB</span> -
+                  Cycle through weapons
+                </p>
+              </div>
+            </div>
+
+            {/* Weapons */}
+            <div className="bg-gray-900 bg-opacity-70 rounded-lg p-6 border border-green-500">
+              <h3 className="text-xl font-bold text-green-400 mb-4">
+                Weapons Arsenal
+              </h3>
+              <div className="space-y-2 text-gray-300 text-sm">
+                <p>
+                  <span className="text-green-400">●</span>{' '}
+                  <strong>Laser</strong> - Fast precise shots
+                </p>
+                <p>
+                  <span className="text-purple-400">●</span>{' '}
+                  <strong>Plasma</strong> - Energy spread shots
+                </p>
+                <p>
+                  <span className="text-yellow-400">●</span>{' '}
+                  <strong>Missile</strong> - Heavy explosive rounds
+                </p>
+                <p>
+                  <span className="text-orange-400">●</span>{' '}
+                  <strong>Scatter Gun</strong> - Wide spread pellets
+                </p>
+                <p>
+                  <span className="text-red-400">●</span>{' '}
+                  <strong>Railgun</strong> - Piercing sniper shots
+                </p>
+                <p>
+                  <span className="text-cyan-400">●</span>{' '}
+                  <strong>Pulse Rifle</strong> - Rapid energy bursts
+                </p>
+                <p>
+                  <span className="text-pink-400">●</span>{' '}
+                  <strong>Ion Cannon</strong> - Charged particle beam
+                </p>
+                <p>
+                  <span className="text-blue-400">●</span>{' '}
+                  <strong>Flamethrower</strong> - Short-range fire cone
+                </p>
+                <p>
+                  <span className="text-amber-400">●</span>{' '}
+                  <strong>Sniper</strong> - Long-range precision
+                </p>
+              </div>
+            </div>
+
+            {/* Enemies */}
+            <div className="bg-gray-900 bg-opacity-70 rounded-lg p-6 border border-red-500">
+              <h3 className="text-xl font-bold text-red-400 mb-4">
+                Enemy Types
+              </h3>
+              <div className="space-y-2 text-gray-300">
+                <p>
+                  <span className="text-red-400 text-xl">●</span>{' '}
+                  <strong>Drone</strong> - Fast, weak (30 HP, 10 dmg)
+                </p>
+                <p>
+                  <span className="text-teal-400 text-xl">●</span>{' '}
+                  <strong>Shooter</strong> - Medium range (55 HP, 15 dmg)
+                </p>
+                <p>
+                  <span className="text-blue-400 text-xl">●</span>{' '}
+                  <strong>Tank</strong> - Heavy armor (110 HP, 25 dmg)
+                </p>
+                <p className="text-yellow-400 text-sm mt-3">
+                  ⚠️ Enemies get stronger each wave!
+                </p>
+              </div>
+            </div>
+
+            {/* Power-ups & Turrets */}
+            <div className="bg-gray-900 bg-opacity-70 rounded-lg p-6 border border-yellow-500">
+              <h3 className="text-xl font-bold text-yellow-400 mb-4">
+                Power-ups & Turrets
+              </h3>
+              <div className="space-y-2 text-gray-300">
+                <p>
+                  <strong>Level Up Rewards:</strong>
+                </p>
+                <p>• New weapons & weapon upgrades</p>
+                <p>• Health boost & damage multipliers</p>
+                <p>• Multi-shot & speed enhancements</p>
+                <p className="mt-3">
+                  <strong>Turrets (Wave 10+):</strong>
+                </p>
+                <p>
+                  <span className="text-yellow-400">⚡</span> Touch to activate
+                  (30 seconds)
+                </p>
+                <p>
+                  <span className="text-yellow-400">⚡</span> Fires in 360°
+                  circle pattern
+                </p>
+                <p>
+                  <span className="text-yellow-400">⚡</span> Max 10 turrets per
+                  wave
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <button
+              onClick={() => setGameState('menu')}
+              className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg font-semibold text-lg transition-all duration-200 transform hover:scale-105"
+            >
+              BACK TO MENU
+            </button>
           </div>
         </div>
       </div>
@@ -1567,6 +1835,62 @@ const CosmicSurvivors = () => {
             }}
           />
         ))}
+
+        {/* Inactive Turrets */}
+        {inactiveTurrets.map((turret) => (
+          <div
+            key={turret.id}
+            className="absolute rounded-full border-4 border-yellow-400"
+            style={{
+              left: turret.x - turret.size,
+              top: turret.y - turret.size,
+              width: turret.size * 2,
+              height: turret.size * 2,
+              backgroundColor: turret.color,
+              boxShadow: `0 0 ${10 + turret.pulseFactor * 5}px ${turret.glowColor}`,
+              opacity: 0.6 + turret.pulseFactor * 0.4,
+            }}
+          >
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-black">
+              ⚡
+            </div>
+          </div>
+        ))}
+
+        {/* Active Turrets */}
+        {turrets.map((turret) => {
+          const timeActive = Date.now() - turret.activatedAt;
+          const timeRemaining = Math.max(0, TURRET_DURATION - timeActive);
+          const intensity = Math.sin(Date.now() * 0.01) * 0.3 + 0.7;
+
+          return (
+            <div
+              key={turret.id}
+              className="absolute rounded-full border-4 border-orange-400"
+              style={{
+                left: turret.x - turret.size,
+                top: turret.y - turret.size,
+                width: turret.size * 2,
+                height: turret.size * 2,
+                backgroundColor: '#ff6600',
+                boxShadow: `0 0 ${15 * intensity}px #ff6600, 0 0 ${25 * intensity}px #ff3300`,
+                opacity: 0.9,
+                transform: `rotate(${turret.angle * 57.2958}deg)`, // Convert radians to degrees
+              }}
+            >
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs font-bold text-white">
+                🔫
+              </div>
+              {/* Timer indicator */}
+              <div
+                className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs text-yellow-400 font-bold"
+                style={{ fontSize: '10px' }}
+              >
+                {Math.ceil(timeRemaining / 1000)}s
+              </div>
+            </div>
+          );
+        })}
 
         {/* Pause button */}
         <div className="absolute top-4 right-4 flex items-center space-x-2 z-10">
