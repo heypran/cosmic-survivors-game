@@ -65,59 +65,114 @@ const getWeaponStats = (weapon, player) => {
       fireRate: 250,
       color: '#00ff00',
       spread: 0,
+      bulletCount: 1,
       name: 'Laser',
+      description: 'Fast precise shots',
+      bulletSpeed: 1.0,
     },
     plasma: {
-      damage: 35,
-      fireRate: 400,
+      damage: 28,
+      fireRate: 450,
       color: '#ff00ff',
-      spread: 0.3,
-      name: 'Plasma',
+      spread: 0.25,
+      bulletCount: 3,
+      name: 'Plasma Cannon',
+      description: 'Energy spread shots',
+      bulletSpeed: 0.8,
     },
     missile: {
-      damage: 50,
-      fireRate: 700,
+      damage: 65,
+      fireRate: 800,
       color: '#ffff00',
       spread: 0,
-      name: 'Missile',
+      bulletCount: 1,
+      name: 'Missile Launcher',
+      description: 'Heavy explosive rounds',
+      bulletSpeed: 0.7,
     },
     shotgun: {
-      damage: 15,
-      fireRate: 350,
+      damage: 12,
+      fireRate: 400,
       color: '#ff6600',
-      spread: 0.4,
-      bulletCount: 5,
-      name: 'Shotgun',
+      spread: 0.5,
+      bulletCount: 7,
+      name: 'Scatter Gun',
+      description: 'Wide spread pellets',
+      bulletSpeed: 0.9,
     },
     lightning: {
-      damage: 40,
-      fireRate: 300,
+      damage: 32,
+      fireRate: 180,
       color: '#66ffff',
-      spread: 0.1,
-      name: 'Lightning',
+      spread: 0.2,
+      bulletCount: 2,
+      name: 'Arc Cannon',
+      description: 'Electric twin bolts',
+      bulletSpeed: 1.2,
     },
     railgun: {
-      damage: 80,
-      fireRate: 1000,
+      damage: 120,
+      fireRate: 1200,
       color: '#ffffff',
       spread: 0,
-      name: 'Railgun',
+      bulletCount: 1,
+      name: 'Rail Rifle',
+      description: 'Devastating single shots',
+      bulletSpeed: 1.5,
     },
     burst: {
-      damage: 22,
-      fireRate: 200,
+      damage: 20,
+      fireRate: 150,
       color: '#ff3399',
-      spread: 0.15,
+      spread: 0.1,
+      bulletCount: 4,
+      name: 'Burst Fire',
+      description: 'Rapid quad shots',
+      bulletSpeed: 1.1,
+    },
+    flamethrower: {
+      damage: 8,
+      fireRate: 80,
+      color: '#ff4400',
+      spread: 0.6,
       bulletCount: 3,
-      name: 'Burst',
+      name: 'Flamethrower',
+      description: 'Continuous fire stream',
+      bulletSpeed: 0.6,
+    },
+    sniper: {
+      damage: 150,
+      fireRate: 1500,
+      color: '#00ffff',
+      spread: 0,
+      bulletCount: 1,
+      name: 'Sniper Rifle',
+      description: 'Ultra-long range',
+      bulletSpeed: 2.0,
     },
   };
 
   const base = baseWeapons[weapon];
+
+  // Handle undefined weapons (fallback to laser)
+  if (!base) {
+    console.warn(`Unknown weapon: ${weapon}, falling back to laser`);
+    return getWeaponStats('laser', player);
+  }
+
+  const weaponLevel = player.weaponLevels?.[weapon] || 1;
+
+  // Level-based improvements
+  const levelMultiplier = 1 + (weaponLevel - 1) * 0.3; // 30% improvement per level
+  const bulletCountBonus =
+    weaponLevel > 2 ? Math.floor((weaponLevel - 1) / 2) : 0;
+
   return {
     ...base,
-    damage: Math.floor(base.damage * player.damageMultiplier),
+    damage: Math.floor(base.damage * player.damageMultiplier * levelMultiplier),
     fireRate: Math.floor(base.fireRate / player.fireRateMultiplier),
+    bulletCount: base.bulletCount + bulletCountBonus,
+    level: weaponLevel,
   };
 };
 
@@ -150,37 +205,49 @@ const UPGRADE_OPTIONS = [
   {
     id: 'plasmaWeapon',
     name: 'Plasma Arsenal',
-    description: 'Unlock plasma spread shots',
+    description: 'Unlock/Upgrade plasma spread shots',
     icon: '💥',
   },
   {
     id: 'shotgunWeapon',
     name: 'Scatter Gun',
-    description: 'Unlock shotgun weapon',
+    description: 'Unlock/Upgrade shotgun weapon',
     icon: '🎯',
   },
   {
     id: 'lightningWeapon',
     name: 'Arc Cannon',
-    description: 'Unlock lightning weapon',
+    description: 'Unlock/Upgrade lightning weapon',
     icon: '⚡',
   },
   {
     id: 'railgunWeapon',
     name: 'Rail Rifle',
-    description: 'Unlock powerful railgun',
+    description: 'Unlock/Upgrade powerful railgun',
     icon: '🔫',
   },
   {
     id: 'burstWeapon',
     name: 'Burst Fire',
-    description: 'Unlock burst weapon',
+    description: 'Unlock/Upgrade burst weapon',
     icon: '💨',
   },
   {
     id: 'multiShot',
     name: 'Dual Targeting',
     description: 'Fire at 2 nearest enemies',
+    icon: '🎯',
+  },
+  {
+    id: 'flamethrowerWeapon',
+    name: 'Flamethrower',
+    description: 'Unlock/Upgrade continuous fire stream',
+    icon: '🔥',
+  },
+  {
+    id: 'sniperWeapon',
+    name: 'Sniper Rifle',
+    description: 'Unlock/Upgrade ultra-long range weapon',
     icon: '🎯',
   },
 ];
@@ -196,12 +263,14 @@ const CosmicSurvivors = () => {
     xp: 0,
     xpToNext: 100,
     weapons: ['laser'],
+    weaponLevels: { laser: 1 },
     activeWeapon: 0,
     speed: PLAYER_SPEED,
     damageMultiplier: 1.0,
     fireRateMultiplier: 1.0,
     shieldActive: false,
     shieldTime: 0,
+    hasMultiShot: false,
   });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [enemies, setEnemies] = useState([]);
@@ -214,6 +283,7 @@ const CosmicSurvivors = () => {
   const [score, setScore] = useState(0);
   const [waveTimer, setWaveTimer] = useState(WAVE_DURATION);
   const [upgrades, setUpgrades] = useState([]);
+  const [upgradeSelected, setUpgradeSelected] = useState(false);
   const [grenadesSpawned, setGrenadesSpawned] = useState(0);
   const [healthPacksSpawned, setHealthPacksSpawned] = useState(0);
   const [shieldsSpawned, setShieldsSpawned] = useState(0);
@@ -233,8 +303,7 @@ const CosmicSurvivors = () => {
     if (now - lastShotRef.current < weaponStats.fireRate) return;
 
     const bulletAngle = angle(playerPosRef.current, mousePos);
-    const bulletCount =
-      weaponStats.bulletCount || (currentWeapon === 'plasma' ? 3 : 1);
+    const bulletCount = weaponStats.bulletCount;
 
     const newBullets = [];
     for (let j = 0; j < bulletCount; j++) {
@@ -243,17 +312,26 @@ const CosmicSurvivors = () => {
           ? bulletAngle + (j - (bulletCount - 1) / 2) * weaponStats.spread
           : bulletAngle;
 
+      const bulletSpeed = BULLET_SPEED * (weaponStats.bulletSpeed || 1.0);
+      const bulletSize =
+        currentWeapon === 'railgun' || currentWeapon === 'sniper'
+          ? 6
+          : currentWeapon === 'missile'
+            ? 5
+            : currentWeapon === 'plasma' || currentWeapon === 'flamethrower'
+              ? 4
+              : 3;
+
       newBullets.push({
         id: Date.now() + Math.random() + j,
         x: playerPosRef.current.x,
         y: playerPosRef.current.y,
-        vx: Math.cos(spreadAngle) * BULLET_SPEED,
-        vy: Math.sin(spreadAngle) * BULLET_SPEED,
+        vx: Math.cos(spreadAngle) * bulletSpeed,
+        vy: Math.sin(spreadAngle) * bulletSpeed,
         damage: weaponStats.damage,
         color: weaponStats.color,
         weapon: currentWeapon,
-        size:
-          currentWeapon === 'railgun' ? 6 : currentWeapon === 'plasma' ? 4 : 3,
+        size: bulletSize,
       });
     }
 
@@ -276,6 +354,23 @@ const CosmicSurvivors = () => {
       if (key === ' ' && gameState === 'playing') {
         e.preventDefault();
         manualShoot();
+      }
+
+      // Weapon switching with number keys (1-9)
+      if (gameState === 'playing' && /^[1-9]$/.test(key)) {
+        const weaponIndex = parseInt(key) - 1;
+        if (weaponIndex < player.weapons.length) {
+          setPlayer((prev) => ({ ...prev, activeWeapon: weaponIndex }));
+        }
+      }
+
+      // Cycle through weapons with Tab
+      if (key === 'tab' && gameState === 'playing') {
+        e.preventDefault();
+        setPlayer((prev) => ({
+          ...prev,
+          activeWeapon: (prev.activeWeapon + 1) % prev.weapons.length,
+        }));
       }
     };
 
@@ -523,6 +618,7 @@ const CosmicSurvivors = () => {
       () => Math.random() - 0.5
     ).slice(0, 3);
     setUpgrades(randomUpgrades);
+    setUpgradeSelected(false);
     setGameState('levelUp');
   }, []);
 
@@ -556,36 +652,74 @@ const CosmicSurvivors = () => {
         case 'plasmaWeapon':
           if (!newPlayer.weapons.includes('plasma')) {
             newPlayer.weapons.push('plasma');
+            newPlayer.weaponLevels.plasma = 1;
             newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.plasma =
+              (newPlayer.weaponLevels.plasma || 1) + 1;
           }
           break;
         case 'shotgunWeapon':
           if (!newPlayer.weapons.includes('shotgun')) {
             newPlayer.weapons.push('shotgun');
+            newPlayer.weaponLevels.shotgun = 1;
             newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.shotgun =
+              (newPlayer.weaponLevels.shotgun || 1) + 1;
           }
           break;
         case 'lightningWeapon':
           if (!newPlayer.weapons.includes('lightning')) {
             newPlayer.weapons.push('lightning');
+            newPlayer.weaponLevels.lightning = 1;
             newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.lightning =
+              (newPlayer.weaponLevels.lightning || 1) + 1;
           }
           break;
         case 'railgunWeapon':
           if (!newPlayer.weapons.includes('railgun')) {
             newPlayer.weapons.push('railgun');
+            newPlayer.weaponLevels.railgun = 1;
             newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.railgun =
+              (newPlayer.weaponLevels.railgun || 1) + 1;
           }
           break;
         case 'burstWeapon':
           if (!newPlayer.weapons.includes('burst')) {
             newPlayer.weapons.push('burst');
+            newPlayer.weaponLevels.burst = 1;
             newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.burst =
+              (newPlayer.weaponLevels.burst || 1) + 1;
           }
           break;
         case 'multiShot':
-          if (!newPlayer.weapons.includes('multiShot')) {
-            newPlayer.weapons.push('multiShot');
+          newPlayer.hasMultiShot = true;
+          break;
+        case 'flamethrowerWeapon':
+          if (!newPlayer.weapons.includes('flamethrower')) {
+            newPlayer.weapons.push('flamethrower');
+            newPlayer.weaponLevels.flamethrower = 1;
+            newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.flamethrower =
+              (newPlayer.weaponLevels.flamethrower || 1) + 1;
+          }
+          break;
+        case 'sniperWeapon':
+          if (!newPlayer.weapons.includes('sniper')) {
+            newPlayer.weapons.push('sniper');
+            newPlayer.weaponLevels.sniper = 1;
+            newPlayer.activeWeapon = newPlayer.weapons.length - 1;
+          } else {
+            newPlayer.weaponLevels.sniper =
+              (newPlayer.weaponLevels.sniper || 1) + 1;
           }
           break;
         default:
@@ -593,6 +727,24 @@ const CosmicSurvivors = () => {
       }
       return newPlayer;
     });
+    setUpgradeSelected(true);
+  }, []);
+
+  // Continue from level up screen
+  const continueFromLevelUp = useCallback(() => {
+    setGameState('playing');
+  }, []);
+
+  // Continue to next wave
+  const continueToNextWave = useCallback(() => {
+    setWave((prevWave) => {
+      const newWave = prevWave + 1;
+      setGrenadesSpawned(0);
+      setHealthPacksSpawned(0);
+      setShieldsSpawned(0);
+      return newWave;
+    });
+    setWaveTimer(WAVE_DURATION);
     setGameState('playing');
   }, []);
 
@@ -849,14 +1001,8 @@ const CosmicSurvivors = () => {
     setWaveTimer((prev) => {
       const newTimer = prev - 16;
       if (newTimer <= 0) {
-        setWave((prevWave) => {
-          const newWave = prevWave + 1;
-          setGrenadesSpawned(0);
-          setHealthPacksSpawned(0);
-          setShieldsSpawned(0);
-          return newWave;
-        });
-        return WAVE_DURATION;
+        setGameState('waveComplete');
+        return 0;
       }
       return newTimer;
     });
@@ -902,17 +1048,15 @@ const CosmicSurvivors = () => {
       xp: 0,
       xpToNext: 100,
       weapons: ['laser'],
+      weaponLevels: { laser: 1 },
       activeWeapon: 0,
       speed: PLAYER_SPEED,
       damageMultiplier: 1.0,
       fireRateMultiplier: 1.0,
       shieldActive: false,
       shieldTime: 0,
+      hasMultiShot: false,
     });
-    setEnemies([]);
-    setBullets([]);
-    setGrenades([]);
-    setHealthPacks([]);
     setEnemies([]);
     setBullets([]);
     setGrenades([]);
@@ -998,30 +1142,110 @@ const CosmicSurvivors = () => {
           <h2 className="text-2xl font-bold mb-6 text-center text-purple-400">
             LEVEL UP!
           </h2>
-          <p className="text-center mb-6 text-gray-300">
-            Choose your enhancement:
-          </p>
-          <div className="space-y-3">
-            {upgrades.map((upgrade) => (
+          {!upgradeSelected ? (
+            <p className="text-center mb-6 text-gray-300">
+              Choose your enhancement:
+            </p>
+          ) : (
+            <p className="text-center mb-6 text-green-400">
+              Enhancement applied! Ready to continue?
+            </p>
+          )}
+          {!upgradeSelected ? (
+            <div className="space-y-3">
+              {upgrades.map((upgrade) => {
+                // Check if this is a weapon upgrade
+                const isWeaponUpgrade = upgrade.id.includes('Weapon');
+                let weaponType = null;
+                let weaponStats = null;
+                let currentLevel = 0;
+                let isNewWeapon = false;
+
+                if (isWeaponUpgrade) {
+                  // Extract weapon type from upgrade ID
+                  weaponType = upgrade.id.replace('Weapon', '');
+                  weaponStats = getWeaponStats(weaponType, player);
+                  currentLevel = player.weaponLevels?.[weaponType] || 0;
+                  isNewWeapon = !player.weapons.includes(weaponType);
+                }
+
+                return (
+                  <button
+                    key={upgrade.id}
+                    onClick={() => applyUpgrade(upgrade)}
+                    className="w-full p-4 bg-gray-800 hover:bg-purple-700 border border-gray-600 hover:border-purple-400 rounded-lg transition-all duration-200 text-left"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <span className="text-2xl flex-shrink-0">
+                        {upgrade.icon}
+                      </span>
+                      <div className="flex-grow">
+                        <div className="flex items-center justify-between">
+                          <div className="font-semibold text-purple-300">
+                            {upgrade.name}
+                          </div>
+                          {isWeaponUpgrade && (
+                            <div className="text-xs">
+                              {isNewWeapon ? (
+                                <span className="bg-green-600 text-white px-2 py-1 rounded">
+                                  NEW
+                                </span>
+                              ) : (
+                                <span className="bg-blue-600 text-white px-2 py-1 rounded">
+                                  LV.{currentLevel} → {currentLevel + 1}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-400 mt-1">
+                          {upgrade.description}
+                        </div>
+                        {isWeaponUpgrade && weaponStats && (
+                          <div className="mt-2 p-2 bg-gray-900 rounded border border-gray-700">
+                            <div className="text-xs text-gray-300 space-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-yellow-300">Damage:</span>
+                                <span>{weaponStats.damage}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-blue-300">
+                                  Fire Rate:
+                                </span>
+                                <span>
+                                  {(1000 / weaponStats.fireRate).toFixed(1)}/sec
+                                </span>
+                              </div>
+                              {weaponStats.bulletCount > 1 && (
+                                <div className="flex justify-between">
+                                  <span className="text-green-300">
+                                    Projectiles:
+                                  </span>
+                                  <span>{weaponStats.bulletCount}</span>
+                                </div>
+                              )}
+                              <div className="text-xs text-cyan-300 italic mt-1">
+                                "{weaponStats.description}"
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center">
               <button
-                key={upgrade.id}
-                onClick={() => applyUpgrade(upgrade)}
-                className="w-full p-4 bg-gray-800 hover:bg-purple-700 border border-gray-600 hover:border-purple-400 rounded-lg transition-all duration-200 text-left"
+                onClick={continueFromLevelUp}
+                className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 rounded-lg font-semibold text-lg transition-all duration-200 transform hover:scale-105"
               >
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">{upgrade.icon}</span>
-                  <div>
-                    <div className="font-semibold text-purple-300">
-                      {upgrade.name}
-                    </div>
-                    <div className="text-sm text-gray-400">
-                      {upgrade.description}
-                    </div>
-                  </div>
-                </div>
+                CONTINUE
               </button>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1066,6 +1290,33 @@ const CosmicSurvivors = () => {
             >
               Main Menu
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'waveComplete') {
+    return (
+      <div className="w-full h-screen bg-gradient-to-b from-green-900 via-blue-900 to-black flex items-center justify-center text-white">
+        <div className="text-center space-y-6">
+          <h1 className="text-4xl font-bold text-green-400 mb-4">
+            WAVE {wave} COMPLETE!
+          </h1>
+          <div className="text-xl text-gray-300 mb-6">
+            <p>Enemies defeated: {score}</p>
+            <p>Level: {player.level}</p>
+          </div>
+          <div className="space-y-4">
+            <button
+              onClick={continueToNextWave}
+              className="px-8 py-3 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 rounded-lg font-semibold text-lg transition-all duration-200 transform hover:scale-105"
+            >
+              CONTINUE TO WAVE {wave + 1}
+            </button>
+            <div className="text-sm text-gray-400">
+              <p>Prepare for increased difficulty!</p>
+            </div>
           </div>
         </div>
       </div>
@@ -1119,7 +1370,7 @@ const CosmicSurvivors = () => {
               <span className="font-semibold">🔥 RATE:</span>{' '}
               {Math.round(player.fireRateMultiplier * 100)}%
             </div>
-            {player.weapons.includes('multiShot') && (
+            {player.hasMultiShot && (
               <div className="text-pink-300 font-bold">🎯 DUAL</div>
             )}
           </div>
@@ -1131,17 +1382,28 @@ const CosmicSurvivors = () => {
             Wave {wave} • {Math.ceil(waveTimer / 1000)}s
           </div>
           <div className="text-xs text-purple-300">
-            Weapon:{' '}
-            {(
-              getWeaponStats(
-                player.weapons[player.activeWeapon] || 'laser',
-                player
-              ).name || 'LASER'
-            ).toUpperCase()}
+            Weapons ({player.weapons.length}):
+            <div className="flex flex-wrap gap-1 mt-1">
+              {player.weapons.map((weapon, index) => {
+                const stats = getWeaponStats(weapon, player);
+                const isActive = index === player.activeWeapon;
+                return (
+                  <div
+                    key={weapon}
+                    className={`px-2 py-1 rounded text-xs ${
+                      isActive
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {index + 1}. {stats.name.toUpperCase()} LV.{stats.level}
+                  </div>
+                );
+              })}
+            </div>
             {player.shieldActive && (
-              <span className="text-blue-400">
-                {' '}
-                • SHIELD: {Math.ceil(player.shieldTime / 1000)}s
+              <span className="text-blue-400 block mt-1">
+                SHIELD: {Math.ceil(player.shieldTime / 1000)}s
               </span>
             )}
           </div>
@@ -1157,8 +1419,8 @@ const CosmicSurvivors = () => {
         style={{
           width: GAME_WIDTH,
           height: GAME_HEIGHT,
-          backgroundImage: `radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
-                           radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.1) 1px, transparent 1px)`,
+          backgroundImage: `radial-gradient(circle at 25% 25%, rgba(128, 128, 128, 0.06) 1px, transparent 1px),
+                           radial-gradient(circle at 75% 75%, rgba(128, 128, 128, 0.06) 1px, transparent 1px)`,
           backgroundSize: '50px 50px',
         }}
         onMouseMove={(e) => {
@@ -1178,11 +1440,10 @@ const CosmicSurvivors = () => {
         {Array.from({ length: 50 }, (_, i) => (
           <div
             key={i}
-            className="absolute w-1 h-1 bg-white rounded-full opacity-60"
+            className="absolute w-1 h-1 bg-gray-500 rounded-full opacity-30"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
+              left: `${(i * 47) % 100}%`,
+              top: `${(i * 73) % 100}%`,
             }}
           />
         ))}
@@ -1337,7 +1598,8 @@ const CosmicSurvivors = () => {
 
       {/* Controls reminder */}
       <div className="mt-4 text-gray-400 text-sm text-center">
-        WASD: Move • Click or SPACE to shoot • P: Pause
+        WASD: Move • Click/SPACE: Shoot • 1-9: Switch Weapons • TAB: Cycle • P:
+        Pause
         {wave >= 3 && <span> • Grenades explode on contact!</span>}
         {wave >= 4 && <span> • Green packs restore health</span>}
         {wave >= 8 && <span> • Special grenade types available</span>}
